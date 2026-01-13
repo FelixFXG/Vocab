@@ -21,7 +21,16 @@
       padding: var(--pad);
       box-sizing: border-box;
       cursor: pointer;
+      /* allow native vertical scrolling but deliver horizontal gestures to JS */
+      touch-action: pan-y;
     }
+
+    /* disable mobile tap highlight and touch callout (prevents blue flash on tap) */
+    html, body, .card, .card * {
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+    }
+
     .card {
       width: min(980px, 100%);
       border: 1px solid rgba(255,255,255,0.10);
@@ -83,11 +92,6 @@
       margin: 0 0 12px 0;
       line-height: 1.05;
     }
-    .hint {
-      opacity: 0.75;
-      font-size: 14px;
-      margin: 0 0 14px 0;
-    }
     .reveal {
       display: none;
       margin-top: 18px;
@@ -120,6 +124,36 @@
       opacity: 0.65;
       font-size: 12px;
     }
+
+    /* tiny tap explosion effect (white dots that float out and fade) */
+    .tap-fx {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 0;
+      height: 0;
+      pointer-events: none;
+      z-index: 9999;
+      transform: translate(-50%, -50%);
+    }
+    .tap-dot {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 8px;
+      height: 8px;
+      background: rgba(255,255,255,0.96);
+      border-radius: 50%;
+      opacity: 0;
+      transform: translate(0,0) scale(1);
+      box-shadow: 0 0 8px rgba(255,255,255,0.08);
+      animation: tap-pop 700ms cubic-bezier(.2,.9,.3,1) forwards;
+    }
+    @keyframes tap-pop {
+      0% { opacity: 1; transform: translate(0,0) scale(1); }
+      60% { opacity: 0.9; }
+      100% { opacity: 0; transform: translate(var(--dx,0), var(--dy,0)) scale(0.6); }
+    }
   </style>
 </head>
 <body>
@@ -128,15 +162,10 @@
       <div class="card-inner" id="cardInner">
         <div class="top">
           <div id="counter">Card — / —</div>
-          <div>
-            <span><kbd>Tap</kbd> reveal</span> ·
-            <span><kbd>Space</kbd>/<kbd>N</kbd> next</span> ·
-            <span><kbd>Enter</kbd> reveal</span>
-          </div>
+          <div id="instructions">Swipe for next/previous. Tap to reveal.</div>
         </div>
 
         <h1 class="word" id="word">Loading…</h1>
-        <p class="hint" id="hint">Tap anywhere to reveal meaning + example.</p>
 
         <div class="reveal" id="reveal">
           <div class="line">
@@ -145,7 +174,7 @@
           <div class="example">
             <span class="label">Example:</span><span id="example">—</span>
           </div>
-          <div class="footer">Tip: Press Space (or N) for a new random card.</div>
+          <div class="footer">.</div>
         </div>
       </div>
 
@@ -243,13 +272,12 @@
       wrap: document.getElementById("wrap"),
       cardInner: document.getElementById("cardInner"),
       word: document.getElementById("word"),
-      hint: document.getElementById("hint"),
       reveal: document.getElementById("reveal"),
       meaning: document.getElementById("meaning"),
       example: document.getElementById("example"),
       counter: document.getElementById("counter"),
       sr: document.getElementById("sr"),
-    };
+    }; 
 
     let currentIndex = -1;
     let revealed = false;
@@ -283,7 +311,6 @@
       el.example.textContent = c.example;
 
       el.counter.textContent = `Card ${currentIndex + 1} / ${cards.length}`;
-      el.hint.textContent = "Tap to reveal. Swipe ←/→ for next/previous. N = next.";
 
       // update sr-only with the word (screen readers will get full info on reveal)
       el.sr.textContent = c.word;
@@ -348,9 +375,9 @@
       revealed = !revealed;
       el.reveal.classList.toggle("show", revealed);
       el.cardInner.classList.toggle("revealed", revealed);
-      el.hint.textContent = revealed
-        ? "Tap to hide. Swipe ←/→ for next/previous. N = next."
-        : "Tap to reveal. Swipe ←/→ for next/previous. N = next.";
+
+      // while revealed, prefer JS handling of horizontal gestures; when hidden allow vertical panning
+      el.wrap.style.touchAction = revealed ? 'none' : 'pan-y';
 
       // update sr-only announcer (more detailed on reveal)
       if (revealed) {
@@ -392,36 +419,60 @@
       }
     });
 
-    // ---- Swipe / tap support (phones) ----
+    // ---- Swipe / tap support (phones & desktop) ----
     // Swipe left  => next random card
     // Swipe right => previous card (history)
-    const SWIPE_MIN_PX = 50; // how far finger must move in X to count
+    const SWIPE_MIN_PX = 50; // how far finger/mouse must move in X to count
     const SWIPE_MAX_Y = 90;  // ignore if too much vertical movement
 
     let startX = 0;
     let startY = 0;
     let startTime = 0;
     let tracking = false;
+    let pointerId = null;
 
-    el.wrap.addEventListener("touchstart", (e) => {
-      if (e.touches.length !== 1) return;
-      const t = e.touches[0];
+    // unified pointer events will handle touch and mouse gestures (no separate touch handlers)
+
+    // pointer handlers (mouse & touch)
+    el.wrap.addEventListener("pointerdown", (e) => {
+      // ignore non-primary buttons (e.button === 0 is primary)
+      if (e.button && e.button !== 0) return;
+      console.debug('pointerdown', { type: e.pointerType, button: e.button, pointerId: e.pointerId, x: e.clientX, y: e.clientY, revealed });
       tracking = true;
-      startX = t.clientX;
-      startY = t.clientY;
+      pointerId = e.pointerId;
+      startX = e.clientX;
+      startY = e.clientY;
       startTime = Date.now();
-    }, { passive: true });
+      try { el.wrap.setPointerCapture(pointerId); } catch (err) {}
+    });
 
-    el.wrap.addEventListener("touchend", (e) => {
-      if (!tracking) return;
+    el.wrap.addEventListener("pointermove", (e) => {
+      if (!tracking || e.pointerId !== pointerId) return;
+      // we intentionally don't do anything on move; final gesture is handled on pointerup
+    });
+
+    window.addEventListener("pointerup", (e) => {
+      if (!tracking || e.pointerId !== pointerId) return;
+      console.debug('pointerup', { pointerId: e.pointerId, x: e.clientX, y: e.clientY, revealed });
       tracking = false;
+      pointerId = null;
+      handlePointerGesture(e.clientX, e.clientY);
+      try { el.wrap.releasePointerCapture(e.pointerId); } catch (err) {}
+    });
 
-      const t = e.changedTouches[0];
-      if (!t) return;
+    window.addEventListener("pointercancel", (e) => {
+      if (tracking && e.pointerId === pointerId) {
+        tracking = false;
+        pointerId = null;
+        try { el.wrap.releasePointerCapture(e.pointerId); } catch (err) {}
+      }
+    });
 
-      const dx = t.clientX - startX;
-      const dy = t.clientY - startY;
+    function handlePointerGesture(x, y) {
+      const dx = x - startX;
+      const dy = y - startY;
       const dt = Date.now() - startTime;
+      console.debug('gesture', { dx, dy, dt, revealed, SWIPE_MIN_PX, SWIPE_MAX_Y });
 
       // horizontal swipe
       if (Math.abs(dx) >= SWIPE_MIN_PX && Math.abs(dy) <= SWIPE_MAX_Y) {
@@ -435,17 +486,56 @@
         suppressNextClick = true;
         toggleReveal();
       }
-    }, { passive: true });
+    }
 
     // Start on a random card
     if (!cards.length) {
       el.word.textContent = "No cards yet";
-      el.hint.textContent = "Add cards to the 'cards' array in the HTML file.";
       el.counter.textContent = "Card — / —";
     } else {
       // don't animate the very first load
       showNextRandom({ animate: false });
     }
+
+    // --- Tap FX: tiny white explosion where the user taps/clicks ---
+    function showTapEffect(x, y) {
+      const fx = document.createElement('div');
+      fx.className = 'tap-fx';
+      fx.style.left = x + 'px';
+      fx.style.top = y + 'px';
+
+      const DOTS = 6;
+      const baseRadius = 36; // px outward distance
+
+      for (let i = 0; i < DOTS; i++) {
+        const dot = document.createElement('div');
+        dot.className = 'tap-dot';
+
+        // distribute dots in a rough circle with a slight random offset
+        const angle = (Math.PI * 2) * (i / DOTS) + (Math.random() * 0.6 - 0.3);
+        const dist = baseRadius * (0.6 + Math.random() * 0.8);
+        const dx = Math.round(Math.cos(angle) * dist) + 'px';
+        const dy = Math.round(Math.sin(angle) * dist) + 'px';
+
+        dot.style.setProperty('--dx', dx);
+        dot.style.setProperty('--dy', dy);
+        dot.style.width = dot.style.height = (6 + Math.round(Math.random() * 6)) + 'px';
+        dot.style.animationDelay = (Math.random() * 80) + 'ms';
+
+        fx.appendChild(dot);
+      }
+
+      document.body.appendChild(fx);
+
+      // remove after animation finishes
+      setTimeout(() => fx.remove(), 900);
+    }
+
+    // use pointerdown so it works for touch and mouse; ignore non-primary buttons
+    document.addEventListener('pointerdown', (e) => {
+      if (e.button && e.button !== 0) return;
+      showTapEffect(e.clientX, e.clientY);
+    }, { passive: true });
 
   </script>
 </body>
