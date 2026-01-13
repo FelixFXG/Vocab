@@ -98,8 +98,10 @@
       border-top: 1px solid rgba(255,255,255,0.10);
       padding-top: 16px;
       gap: 12px;
+      /* make non-interactive so pointer events fall through to the wrap element */
+      pointer-events: none;
     }
-    .reveal.show { display: grid; }
+    .reveal.show { display: grid; pointer-events: none; }
     .label {
       font-weight: 700;
       opacity: 0.95;
@@ -316,12 +318,25 @@
       el.sr.textContent = c.word;
     }
 
+    let _animFallbackTimer = null;
+
     function animateToIndex(idx, direction) {
       if (animating) return;
       animating = true;
+      console.debug('animateToIndex start', { idx, direction });
 
       const outClass = direction === 'next' ? 'anim-out-left' : 'anim-out-right';
       const inClass = direction === 'next' ? 'anim-in-right' : 'anim-in-left';
+
+      // Fallback: if animationend doesn't fire for some reason, clear animating after timeout
+      _animFallbackTimer = setTimeout(() => {
+        if (animating) {
+          console.warn('animation fallback triggered — clearing animating state');
+          animating = false;
+          el.cardInner.classList.remove(outClass, inClass);
+          _animFallbackTimer = null;
+        }
+      }, 900);
 
       const onOutEnd = () => {
         el.cardInner.removeEventListener('animationend', onOutEnd);
@@ -336,6 +351,8 @@
           el.cardInner.removeEventListener('animationend', onInEnd);
           el.cardInner.classList.remove(inClass);
           animating = false;
+          if (_animFallbackTimer) { clearTimeout(_animFallbackTimer); _animFallbackTimer = null; }
+          console.debug('animateToIndex end', { idx });
         };
         el.cardInner.addEventListener('animationend', onInEnd);
       };
@@ -370,7 +387,9 @@
     }
 
     function toggleReveal() {
-      if (animating) return;
+      if (animating) {
+        console.debug('toggleReveal called while animating; forcing toggle to keep UI responsive');
+      }
 
       revealed = !revealed;
       el.reveal.classList.toggle("show", revealed);
@@ -385,6 +404,16 @@
       } else {
         el.sr.textContent = el.word.textContent;
       }
+    }
+
+    // immediately hide reveal without animations (used before swiping a revealed card)
+    function hideRevealInstant() {
+      if (!revealed) return;
+      revealed = false;
+      el.reveal.classList.remove('show');
+      el.cardInner.classList.remove('revealed');
+      el.wrap.style.touchAction = 'pan-y';
+      el.sr.textContent = el.word.textContent;
     }
 
     // Tap/click anywhere to toggle reveal/hide
@@ -430,30 +459,83 @@
     let startTime = 0;
     let tracking = false;
     let pointerId = null;
+    let gestureHandled = false; // true when a gesture was already recognized during a move
 
     // unified pointer events will handle touch and mouse gestures (no separate touch handlers)
+
+    // helper to start a gesture from a point (used by global and element handlers)
+    function startGestureFromPoint(x, y, id) {
+      console.debug('startGestureFromPoint', { x, y, id, revealed });
+      tracking = true;
+      gestureHandled = false;
+      pointerId = id !== undefined ? id : pointerId; // prefer passed id
+      startX = x;
+      startY = y;
+      startTime = Date.now();
+      if (pointerId !== null && pointerId !== undefined) {
+        try { el.wrap.setPointerCapture(pointerId); } catch (err) {}
+      }
+    }
+
+    // global pointer/touch starters (capture) - ensures gestures start even when a reveal overlay is present
+    document.addEventListener('pointerdown', (e) => {
+      if (e.button && e.button !== 0) return;
+      if (!el.wrap.contains(e.target)) return;
+      startGestureFromPoint(e.clientX, e.clientY, e.pointerId);
+    }, { passive: true, capture: true });
+
+    document.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      if (!el.wrap.contains(t.target)) return;
+      startGestureFromPoint(t.clientX, t.clientY, undefined);
+    }, { passive: true, capture: true });
 
     // pointer handlers (mouse & touch)
     el.wrap.addEventListener("pointerdown", (e) => {
       // ignore non-primary buttons (e.button === 0 is primary)
       if (e.button && e.button !== 0) return;
       console.debug('pointerdown', { type: e.pointerType, button: e.button, pointerId: e.pointerId, x: e.clientX, y: e.clientY, revealed });
-      tracking = true;
-      pointerId = e.pointerId;
-      startX = e.clientX;
-      startY = e.clientY;
-      startTime = Date.now();
-      try { el.wrap.setPointerCapture(pointerId); } catch (err) {}
+      startGestureFromPoint(e.clientX, e.clientY, e.pointerId);
     });
 
     el.wrap.addEventListener("pointermove", (e) => {
-      if (!tracking || e.pointerId !== pointerId) return;
-      // we intentionally don't do anything on move; final gesture is handled on pointerup
+      if (!tracking || e.pointerId !== pointerId || gestureHandled) return;
+
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      const dt = Date.now() - startTime;
+
+      // if we've moved far enough horizontally, trigger swipe immediately
+      if (Math.abs(dx) >= SWIPE_MIN_PX && Math.abs(dy) <= SWIPE_MAX_Y) {
+        console.debug('pointermove -> detected swipe', { dx, dy, dt, revealed });
+        gestureHandled = true;
+        suppressNextClick = true;
+
+        // if the card is currently revealed, hide it immediately before navigating
+        hideRevealInstant();
+
+        if (dx < 0) showNextRandom({ animate: true });
+        else showPrev({ animate: true });
+
+        // cleanup capture/state
+        tracking = false;
+        try { el.wrap.releasePointerCapture(e.pointerId); } catch (err) {}
+      }
     });
 
     window.addEventListener("pointerup", (e) => {
       if (!tracking || e.pointerId !== pointerId) return;
-      console.debug('pointerup', { pointerId: e.pointerId, x: e.clientX, y: e.clientY, revealed });
+      console.debug('pointerup', { pointerId: e.pointerId, x: e.clientX, y: e.clientY, revealed, gestureHandled });
+
+      // if gesture already handled on move, just cleanup
+      if (gestureHandled) {
+        tracking = false;
+        pointerId = null;
+        try { el.wrap.releasePointerCapture(e.pointerId); } catch (err) {}
+        return;
+      }
+
       tracking = false;
       pointerId = null;
       handlePointerGesture(e.clientX, e.clientY);
@@ -477,6 +559,9 @@
       // horizontal swipe
       if (Math.abs(dx) >= SWIPE_MIN_PX && Math.abs(dy) <= SWIPE_MAX_Y) {
         suppressNextClick = true; // prevent the synthetic click
+
+        // if the card is currently revealed, hide it immediately before navigating
+        hideRevealInstant();
 
         if (dx < 0) showNextRandom({ animate: true });
         else showPrev({ animate: true });
