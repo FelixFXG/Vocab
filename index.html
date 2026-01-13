@@ -86,7 +86,7 @@
   </style>
 </head>
 <body>
-  <div class="wrap" id="wrap" title="Click anywhere to reveal/hide. Space/N = next. Enter = reveal.">
+  <div class="wrap" id="wrap" title="Tap to reveal/hide. Swipe left/right for next/previous. Space/N = next. Enter = reveal.">
     <div class="card" role="application" aria-label="Random flashcards">
       <div class="top">
         <div id="counter">Card — / —</div>
@@ -197,81 +197,165 @@
       { word: "Compelling", meaning: "Very convincing / strongly interesting（有说服力的；引人入胜的）", example: "That’s a compelling argument.（这是个很有说服力的观点。）" },
       { word: "Disdain", meaning: "Strong dislike + looking down on（鄙视；轻视）", example: "He spoke with disdain.（他说话带着轻视。）" }
     ];
+const cards = [
+    // (keep your cards array exactly as-is)
+  ];
 
-    const el = {
-      wrap: document.getElementById("wrap"),
-      word: document.getElementById("word"),
-      hint: document.getElementById("hint"),
-      reveal: document.getElementById("reveal"),
-      meaning: document.getElementById("meaning"),
-      example: document.getElementById("example"),
-      counter: document.getElementById("counter"),
-    };
+  const el = {
+    wrap: document.getElementById("wrap"),
+    word: document.getElementById("word"),
+    hint: document.getElementById("hint"),
+    reveal: document.getElementById("reveal"),
+    meaning: document.getElementById("meaning"),
+    example: document.getElementById("example"),
+    counter: document.getElementById("counter"),
+  };
 
-    let currentIndex = -1;
-    let revealed = false;
+  let currentIndex = -1;
+  let revealed = false;
 
-    function randIndexAvoidingLast() {
-      if (cards.length <= 1) return 0;
-      let idx;
-      do {
-        idx = Math.floor(Math.random() * cards.length);
-      } while (idx === currentIndex);
-      return idx;
+  // History of visited cards so "previous" makes sense even with random next
+  const history = [];
+  let historyPos = -1;
+
+  function randIndexAvoidingLast() {
+    if (cards.length <= 1) return 0;
+    let idx;
+    do {
+      idx = Math.floor(Math.random() * cards.length);
+    } while (idx === currentIndex);
+    return idx;
+  }
+
+  function renderCard(index) {
+    currentIndex = index;
+    const c = cards[currentIndex];
+
+    revealed = false;
+    el.reveal.classList.remove("show");
+
+    el.word.textContent = c.word;
+    el.meaning.textContent = c.meaning;
+    el.example.textContent = c.example;
+
+    el.counter.textContent = `Card ${currentIndex + 1} / ${cards.length}`;
+    el.hint.textContent = "Tap to reveal. Swipe ←/→ for next/previous.";
+  }
+
+  function showCard(newIndex = null) {
+    const idx = (newIndex ?? randIndexAvoidingLast());
+
+    // If user went "back" in history, then goes to a new random card,
+    // truncate the forward history (like a browser).
+    if (historyPos < history.length - 1) {
+      history.splice(historyPos + 1);
     }
 
-    function showCard(newIndex = null) {
-      currentIndex = (newIndex ?? randIndexAvoidingLast());
-      const c = cards[currentIndex];
+    history.push(idx);
+    historyPos = history.length - 1;
 
-      revealed = false;
-      el.reveal.classList.remove("show");
+    renderCard(idx);
+  }
 
-      el.word.textContent = c.word;
-      el.meaning.textContent = c.meaning;
-      el.example.textContent = c.example;
+  function prevCard() {
+    if (historyPos <= 0) return;
+    historyPos -= 1;
+    renderCard(history[historyPos]);
+  }
 
-      el.counter.textContent = `Card ${currentIndex + 1} / ${cards.length}`;
-      el.hint.textContent = "Click anywhere to reveal meaning + example.";
+  function toggleReveal() {
+    revealed = !revealed;
+    el.reveal.classList.toggle("show", revealed);
+    el.hint.textContent = revealed
+      ? "Tap to hide. Swipe ←/→ for next/previous."
+      : "Tap to reveal. Swipe ←/→ for next/previous.";
+  }
+
+  // Click/tap anywhere to toggle reveal/hide
+  // (We’ll suppress this if the user actually swiped.)
+  let suppressNextClick = false;
+
+  el.wrap.addEventListener("click", (e) => {
+    if (suppressNextClick) {
+      suppressNextClick = false;
+      return;
     }
+    e.preventDefault();
+    toggleReveal();
+  });
 
-    function toggleReveal() {
-      revealed = !revealed;
-      el.reveal.classList.toggle("show", revealed);
-      el.hint.textContent = revealed
-        ? "Click anywhere to hide. Press Space/N for next."
-        : "Click anywhere to reveal meaning + example.";
-    }
+  // Keyboard shortcuts (keep your existing behavior + add Previous with P / ArrowLeft)
+  window.addEventListener("keydown", (e) => {
+    const key = e.key.toLowerCase();
 
-    // Click anywhere to toggle reveal/hide
-    el.wrap.addEventListener("click", (e) => {
+    if (key === " " || key === "n") {
+      e.preventDefault();
+      showCard();           // next random
+    } else if (key === "p" || key === "arrowleft") {
+      e.preventDefault();
+      prevCard();           // previous from history
+    } else if (key === "arrowright") {
+      e.preventDefault();
+      showCard();           // next random
+    } else if (key === "enter") {
       e.preventDefault();
       toggleReveal();
-    });
-
-    // Keyboard shortcuts
-    window.addEventListener("keydown", (e) => {
-      const key = e.key.toLowerCase();
-      if (key === " " || key === "n") {
-        e.preventDefault();
-        showCard();
-      } else if (key === "r") {
-        e.preventDefault();
-        showCard();
-      } else if (key === "enter") {
-        e.preventDefault();
-        toggleReveal();
-      }
-    });
-
-    // Start on a random card
-    if (!cards.length) {
-      el.word.textContent = "No cards yet";
-      el.hint.textContent = "Add cards to the 'cards' array in the HTML file.";
-      el.counter.textContent = "Card — / —";
-    } else {
-      showCard(); // random on load
     }
+  });
+
+  // ---- Swipe support (phones) ----
+  // Swipe left = next random card
+  // Swipe right = previous card (history)
+  const SWIPE_MIN_PX = 50;
+  const SWIPE_MAX_Y = 80;
+
+  let startX = 0;
+  let startY = 0;
+  let tracking = false;
+
+  function onStart(clientX, clientY) {
+    tracking = true;
+    startX = clientX;
+    startY = clientY;
+  }
+
+  function onEnd(clientX, clientY) {
+    if (!tracking) return;
+    tracking = false;
+
+    const dx = clientX - startX;
+    const dy = clientY - startY;
+
+    if (Math.abs(dx) >= SWIPE_MIN_PX && Math.abs(dy) <= SWIPE_MAX_Y) {
+      // prevent the swipe from also triggering the click-to-reveal
+      suppressNextClick = true;
+
+      if (dx < 0) showCard();   // swipe left => next random
+      else prevCard();          // swipe right => previous
+    }
+  }
+
+  // Touch events (simple + reliable)
+  el.wrap.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    onStart(t.clientX, t.clientY);
+  }, { passive: true });
+
+  el.wrap.addEventListener("touchend", (e) => {
+    const t = e.changedTouches[0];
+    if (!t) return;
+    onEnd(t.clientX, t.clientY);
+  }, { passive: true });
+
+  // Start on a random card
+  if (!cards.length) {
+    el.word.textContent = "No cards yet";
+    el.hint.textContent = "Add cards to the 'cards' array in the HTML file.";
+    el.counter.textContent = "Card — / —";
+  } else {
+    showCard(); // random on load (also seeds history)
+  }
   </script>
 </body>
 </html>
