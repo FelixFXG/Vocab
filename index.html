@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Random Flashcards (70)</title>
+  <style>
+    :root { --pad: 24px; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: #0b0f14;
+      color: #e8eef6;
+      user-select: none;
+    }
+    .wrap {
+      height: 100%;
+      display: grid;
+      place-items: center;
+      padding: var(--pad);
+      box-sizing: border-box;
+      cursor: pointer;
+    }
+    .card {
+      width: min(980px, 100%);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.04);
+      padding: clamp(18px, 3vw, 34px);
+      box-shadow: 0 10px 40px rgba(0,0,0,0.35);
+    }
+    .top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      opacity: 0.9;
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+    .word {
+      font-size: clamp(34px, 5vw, 60px);
+      font-weight: 800;
+      letter-spacing: 0.4px;
+      margin: 0 0 12px 0;
+      line-height: 1.05;
+    }
+    .hint {
+      opacity: 0.75;
+      font-size: 14px;
+      margin: 0 0 14px 0;
+    }
+    .reveal {
+      display: none;
+      margin-top: 18px;
+      border-top: 1px solid rgba(255,255,255,0.10);
+      padding-top: 16px;
+      gap: 12px;
+    }
+    .reveal.show { display: grid; }
+    .label {
+      font-weight: 700;
+      opacity: 0.95;
+      margin-right: 8px;
+    }
+    .line, .example {
+      font-size: 18px;
+      line-height: 1.45;
+      opacity: 0.96;
+      word-break: break-word;
+    }
+    kbd {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      padding: 2px 6px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.06);
+    }
+    .footer {
+      margin-top: 14px;
+      opacity: 0.65;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap" id="wrap" title="Click anywhere to reveal/hide. Space/N = next. Enter = reveal.">
+    <div class="card" role="application" aria-label="Random flashcards">
+      <div class="top">
+        <div id="counter">Card — / —</div>
+        <div>
+          <span><kbd>Click</kbd> reveal</span> ·
+          <span><kbd>Space</kbd>/<kbd>N</kbd> next</span> ·
+          <span><kbd>Enter</kbd> reveal</span>
+        </div>
+      </div>
+
+      <h1 class="word" id="word">Loading…</h1>
+      <p class="hint" id="hint">Click anywhere to reveal meaning + example.</p>
+
+      <div class="reveal" id="reveal">
+        <div class="line">
+          <span class="label">Meaning:</span><span id="meaning">—</span>
+        </div>
+        <div class="example">
+          <span class="label">Example:</span><span id="example">—</span>
+        </div>
+        <div class="footer">Tip: Press Space (or N) for a new random card.</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 70 official cards: Day1(10) + Day2(10) + Day3(10) + Day4(10) + Day5(20) + Day6(10)
+    const cards = [
+      // ---- Day 1 ----
+      { word: "Overrated", meaning: "Not as good as people say（被高估的）", example: "That club is overrated.（那家夜店被吹得太厉害了。）" },
+      { word: "Low-key", meaning: "Quiet / not obvious（低调的 / 不张扬的）", example: "It’s a low-key bar.（这是一家比较安静低调的酒吧。）" },
+      { word: "Packed", meaning: "Very crowded（非常拥挤 / 爆满）", example: "The place is packed tonight.（今晚这里人爆满。）" },
+      { word: "Call it a night", meaning: "Stop and go home（结束今晚，回家）", example: "Let’s call it a night.（今晚就到这儿吧。）" },
+      { word: "I’m down", meaning: "I agree / I want to（我愿意 / 我可以）", example: "I’m down for a drink.（我愿意去喝一杯。）" },
+      { word: "Spontaneous", meaning: "Not planned（随性的 / 临时的）", example: "Let’s be spontaneous.（我们随性一点吧。）" },
+      { word: "Not worth it", meaning: "Bad value（不值得）", example: "€15 for a beer? Not worth it.（一杯啤酒15欧？不值得。）" },
+      { word: "Kill time", meaning: "Wait / pass time（打发时间）", example: "Let’s kill time before the train.（等火车前先打发一下时间。）" },
+      { word: "Get along", meaning: "Have a good relationship（相处得好）", example: "I get along with my coworkers.（我和同事相处得很好。）" },
+      { word: "Settle in", meaning: "Become comfortable in a new place（适应新环境）", example: "I’m still settling in here.（我还在适应这里的生活。）" },
+
+      // ---- Day 2 ----
+      { word: "Underwhelming", meaning: "Worse than expected（低于预期 / 有点失望）", example: "The party was underwhelming.（派对有点让人失望。）" },
+      { word: "Stimulate", meaning: "Make active / interested（刺激 / 激发）", example: "This city really stimulates me.（这座城市很能激发我。）" },
+      { word: "Socially drained", meaning: "Tired from socializing（社交耗尽）", example: "I’m socially drained after today.（今天社交把我耗光了。）" },
+      { word: "Pushy", meaning: "Too aggressive（咄咄逼人的 / 过于强势）", example: "The salesman was pushy.（那个销售太强势了。）" },
+      { word: "On the fence", meaning: "Not decided（犹豫不决）", example: "I’m on the fence about going out.（我还在犹豫要不要出去。）" },
+      { word: "Come across as", meaning: "Give an impression（给人一种感觉）", example: "He comes across as confident.（他给人的感觉很自信。）" },
+      { word: "Keep my distance", meaning: "Stay away politely（保持距离）", example: "I keep my distance from drama.（我和是非保持距离。）" },
+      { word: "Overestimate", meaning: "Think something is bigger/better than it is（高估）", example: "I overestimated my Dutch level.（我高估了自己的荷兰语水平。）" },
+      { word: "Draw the line", meaning: "Set a limit / boundary（划清界限 / 设底线）", example: "I need to draw the line at work.（我得在工作上划清界限。）" },
+      { word: "Out of my comfort zone", meaning: "Unfamiliar / challenging（超出舒适区）", example: "Speaking Dutch is out of my comfort zone.（说荷兰语对我来说超出舒适区。）" },
+
+      // ---- Day 3 ----
+      { word: "Misleading", meaning: "Gives the wrong idea（误导的）", example: "That ad is misleading.（那个广告很误导。）" },
+      { word: "Convenient", meaning: "Easy / saves time（方便的）", example: "This location is convenient.（这个位置很方便。）" },
+      { word: "Counterproductive", meaning: "Causes the opposite result（适得其反）", example: "Working late every day is counterproductive.（每天加班反而适得其反。）" },
+      { word: "Take a toll", meaning: "Cause gradual damage（逐渐造成损害 / 消耗）", example: "Stress is taking a toll on me.（压力正在慢慢消耗我。）" },
+      { word: "Make sense", meaning: "Be logical / understandable（有道理 / 说得通）", example: "That doesn’t make sense.（那说不通。）" },
+      { word: "Take it personally", meaning: "Feel offended（往心里去）", example: "Don’t take it personally.（别往心里去。）" },
+      { word: "Go with the flow", meaning: "Accept things naturally（顺其自然）", example: "I’m just going with the flow.（我只是顺其自然。）" },
+      { word: "Compromise", meaning: "Both sides give up something（妥协）", example: "We need to compromise.（我们需要妥协。）" },
+      { word: "Prioritize", meaning: "Decide what matters first（优先处理）", example: "I need to prioritize my health.（我需要把健康放在第一位。）" },
+      { word: "Burnout", meaning: "Extreme exhaustion（精疲力尽 / 倦怠）", example: "I’m close to burnout.（我快要到极限了。）" },
+
+      // ---- Day 4 (Winter) ----
+      { word: "Slippery", meaning: "Easy to fall on（很滑的）", example: "The streets are slippery today.（今天路很滑。）" },
+      { word: "Subzero", meaning: "Below 0°C（零下的）", example: "Temperatures dropped to subzero.（气温降到零下。）" },
+      { word: "Layer up", meaning: "Wear clothes in layers（分层穿衣）", example: "You need to layer up in this weather.（这种天气要分层穿衣。）" },
+      { word: "Disrupted", meaning: "Interrupted / not normal（被打乱 / 中断）", example: "Public transport is disrupted by snow.（公共交通因下雪被打乱。）" },
+      { word: "Icy conditions", meaning: "Very slippery weather（结冰路况）", example: "Driving is dangerous in icy conditions.（结冰路况下开车很危险。）" },
+      { word: "Gloomy", meaning: "Dark / depressing mood（阴沉的 / 情绪低落的）", example: "Winter weather feels gloomy.（冬天的天气让人很压抑。）" },
+      { word: "Wear and tear", meaning: "Damage from daily use（长期损耗）", example: "Winter causes wear and tear on shoes.（冬天对鞋子损耗很大。）" },
+      { word: "Cabin fever", meaning: "Stress from staying indoors too long（久待室内的烦躁感）", example: "I’m getting cabin fever.（我快被关疯了。）" },
+      { word: "Avalanche", meaning: "Large amount of snow falling suddenly（雪崩）", example: "The road was closed due to an avalanche.（由于雪崩，道路被关闭。）" },
+      { word: "Frostbite", meaning: "Skin damage from extreme cold（冻伤）", example: "You can get frostbite in this weather.（这种天气会冻伤。）" },
+
+      // ---- Day 5 (SAT-flavor 20) ----
+      { word: "Ambiguous", meaning: "Unclear / multiple meanings（模棱两可）", example: "His answer was ambiguous.（他的回答模棱两可。）" },
+      { word: "Pragmatic", meaning: "Practical / realistic（务实的）", example: "Let’s take a pragmatic approach.（我们采取务实一点的方法。）" },
+      { word: "Scrutinize", meaning: "Examine closely（仔细审查）", example: "They scrutinized the contract.（他们仔细审查了合同。）" },
+      { word: "Imply", meaning: "Suggest indirectly（暗示）", example: "Are you implying something?（你是在暗示什么吗？）" },
+      { word: "Resilient", meaning: "Recover quickly（有韧性 / 恢复快）", example: "She’s very resilient.（她很有韧性。）" },
+      { word: "Tedious", meaning: "Long and boring（冗长乏味 / 繁琐）", example: "The paperwork is tedious.（这些文件很繁琐。）" },
+      { word: "Mitigate", meaning: "Make less severe（缓解 / 减轻 / 降低）", example: "We need to mitigate the risk.（我们需要降低风险。）" },
+      { word: "Subtle", meaning: "Not obvious（微妙的 / 不明显的）", example: "There’s a subtle difference.（有一个细微的区别。）" },
+      { word: "Inevitable", meaning: "Cannot be avoided（不可避免的）", example: "Change is inevitable.（改变是不可避免的。）" },
+      { word: "Plausible", meaning: "Seems believable（看起来合理的）", example: "That explanation sounds plausible.（这个解释听起来合理。）" },
+      { word: "Alleviate", meaning: "Reduce pain/stress（缓解痛苦/压力）", example: "Exercise helps alleviate stress.（运动能缓解压力。）" },
+      { word: "Discrepancy", meaning: "An unexpected difference（不一致）", example: "There’s a discrepancy in the data.（数据中存在不一致。）" },
+      { word: "Arbitrary", meaning: "Random / without reason（随意的）", example: "The rule feels arbitrary.（这个规则看起来很随意。）" },
+      { word: "Constrain", meaning: "Limit / restrict（限制）", example: "Budget constraints affect us.（预算限制影响了我们。）" },
+      { word: "Incentive", meaning: "Motivation / reward（激励 / 动力）", example: "There’s no incentive to stay late.（没有加班的动力。）" },
+      { word: "Exhaustive", meaning: "Very thorough / complete（全面彻底的）", example: "We did an exhaustive review.（我们做了全面审查。）" },
+      { word: "Repercussion", meaning: "Unintended negative consequence（后果 / 负面影响）", example: "There may be repercussions.（可能会有后果。）" },
+      { word: "Articulate", meaning: "Express clearly（表达清楚的）", example: "She articulated her concerns well.（她清楚地表达了自己的担忧。）" },
+      { word: "Superficial", meaning: "Only on the surface（表面的）", example: "Their knowledge is superficial.（他们的知识很表面。）" },
+      { word: "Viable", meaning: "Possible and workable（可行的）", example: "That’s a viable solution.（这是一个可行的解决方案。）" },
+
+      // ---- Day 6 (10) ----
+      { word: "Exquisite", meaning: "Extremely beautiful / high quality（精美的；精致的）", example: "The food was exquisite.（这顿饭非常精致/好吃到惊艳。）" },
+      { word: "Meticulous", meaning: "Very careful with details（一丝不苟的；非常细致的）", example: "She’s meticulous about her work.（她做事非常细致。）" },
+      { word: "Deteriorate", meaning: "Get worse over time（逐渐变差；恶化）", example: "My sleep deteriorated this week.（我这周睡眠变差了。）" },
+      { word: "Reassuring", meaning: "Makes you feel calm/safe（让人安心的）", example: "His message was reassuring.（他的消息让人安心。）" },
+      { word: "Assertive", meaning: "Confident and direct (not rude)（坚定自信的；有主见的）", example: "Try to be assertive, not aggressive.（要坚定表达，不要咄咄逼人。）" },
+      { word: "Intricate", meaning: "Complex with many small details（复杂精细的）", example: "The design is intricate.（这个设计很精细复杂。）" },
+      { word: "Overlook", meaning: "Fail to notice / ignore（忽视；没注意到）", example: "I overlooked a small mistake.（我忽视了一个小错误。）" },
+      { word: "Justified", meaning: "Fair / has a good reason（合理的；有正当理由的）", example: "Your concern is justified.（你的担心是合理的。）" },
+      { word: "Compelling", meaning: "Very convincing / strongly interesting（有说服力的；引人入胜的）", example: "That’s a compelling argument.（这是个很有说服力的观点。）" },
+      { word: "Disdain", meaning: "Strong dislike + looking down on（鄙视；轻视）", example: "He spoke with disdain.（他说话带着轻视。）" }
+    ];
+
+    const el = {
+      wrap: document.getElementById("wrap"),
+      word: document.getElementById("word"),
+      hint: document.getElementById("hint"),
+      reveal: document.getElementById("reveal"),
+      meaning: document.getElementById("meaning"),
+      example: document.getElementById("example"),
+      counter: document.getElementById("counter"),
+    };
+
+    let currentIndex = -1;
+    let revealed = false;
+
+    function randIndexAvoidingLast() {
+      if (cards.length <= 1) return 0;
+      let idx;
+      do {
+        idx = Math.floor(Math.random() * cards.length);
+      } while (idx === currentIndex);
+      return idx;
+    }
+
+    function showCard(newIndex = null) {
+      currentIndex = (newIndex ?? randIndexAvoidingLast());
+      const c = cards[currentIndex];
+
+      revealed = false;
+      el.reveal.classList.remove("show");
+
+      el.word.textContent = c.word;
+      el.meaning.textContent = c.meaning;
+      el.example.textContent = c.example;
+
+      el.counter.textContent = `Card ${currentIndex + 1} / ${cards.length}`;
+      el.hint.textContent = "Click anywhere to reveal meaning + example.";
+    }
+
+    function toggleReveal() {
+      revealed = !revealed;
+      el.reveal.classList.toggle("show", revealed);
+      el.hint.textContent = revealed
+        ? "Click anywhere to hide. Press Space/N for next."
+        : "Click anywhere to reveal meaning + example.";
+    }
+
+    // Click anywhere to toggle reveal/hide
+    el.wrap.addEventListener("click", (e) => {
+      e.preventDefault();
+      toggleReveal();
+    });
+
+    // Keyboard shortcuts
+    window.addEventListener("keydown", (e) => {
+      const key = e.key.toLowerCase();
+      if (key === " " || key === "n") {
+        e.preventDefault();
+        showCard();
+      } else if (key === "r") {
+        e.preventDefault();
+        showCard();
+      } else if (key === "enter") {
+        e.preventDefault();
+        toggleReveal();
+      }
+    });
+
+    // Start on a random card
+    if (!cards.length) {
+      el.word.textContent = "No cards yet";
+      el.hint.textContent = "Add cards to the 'cards' array in the HTML file.";
+      el.counter.textContent = "Card — / —";
+    } else {
+      showCard(); // random on load
+    }
+  </script>
+</body>
+</html>
