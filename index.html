@@ -127,6 +127,41 @@
       font-size: 12px;
     }
 
+    .mode-toggle {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      padding: 12px 16px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: #e8eef6;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      transition: all 200ms ease;
+      z-index: 100;
+    }
+
+    .mode-toggle:hover {
+      background: rgba(255,255,255,0.12);
+      border-color: rgba(255,255,255,0.18);
+    }
+
+    .mode-toggle:active {
+      transform: translateX(-50%) scale(0.96);
+    }
+
+    .mode-indicator {
+      font-weight: 600;
+      color: #64d8ff;
+    }
+
     /* tiny tap explosion effect (white dots that float out and fade) */
     .tap-fx {
       position: fixed;
@@ -183,6 +218,11 @@
       <div id="sr" class="sr-only" aria-live="polite" aria-atomic="true"></div>
     </div>
   </div>
+
+  <button class="mode-toggle" id="modeToggle" title="Toggle between random and in-order">
+    <span>Mode:</span>
+    <span class="mode-indicator" id="modeLabel">Random</span>
+  </button>
 
   <script>
     // 70 official cards: Day1(10) + Day2(10) + Day3(10) + Day4(10) + Day5(20) + Day6(10)
@@ -279,16 +319,20 @@
       example: document.getElementById("example"),
       counter: document.getElementById("counter"),
       sr: document.getElementById("sr"),
+      modeToggle: document.getElementById("modeToggle"),
+      modeLabel: document.getElementById("modeLabel"),
     }; 
 
     let currentIndex = -1;
     let revealed = false;
     let animating = false;
     let initialLoad = true;
+    let isRandomMode = true; // true for random, false for in-order
 
     // History of visited cards so "previous" makes sense (even though next is randomized)
     const history = [];
     let historyPos = -1;
+    let inOrderIndex = -1; // tracks position when in in-order mode
 
     function randIndexAvoidingLast() {
       if (cards.length <= 1) return 0;
@@ -361,10 +405,18 @@
       el.cardInner.addEventListener('animationend', onOutEnd);
     }
 
-    function showNextRandom(opts = { animate: true }) {
-      const idx = randIndexAvoidingLast();
+    function showNextCard(opts = { animate: true }) {
+      let idx;
+      
+      if (isRandomMode) {
+        idx = randIndexAvoidingLast();
+      } else {
+        // In-order mode: go to next card sequentially
+        idx = (inOrderIndex + 1) % cards.length;
+        inOrderIndex = idx;
+      }
 
-      // If you went "back" then pick a new random card, drop the forward history (like a browser)
+      // If you went "back" then pick a new card, drop the forward history (like a browser)
       if (historyPos < history.length - 1) {
         history.splice(historyPos + 1);
       }
@@ -438,7 +490,7 @@
 
       if (key === " " || key === "n" || key === "arrowright") {
         e.preventDefault();
-        showNextRandom({ animate: true });
+        showNextCard({ animate: true });
       } else if (key === "p" || key === "arrowleft") {
         e.preventDefault();
         showPrev({ animate: true });
@@ -515,7 +567,7 @@
         // if the card is currently revealed, hide it immediately before navigating
         hideRevealInstant();
 
-        if (dx < 0) showNextRandom({ animate: true });
+        if (dx < 0) showNextCard({ animate: true });
         else showPrev({ animate: true });
 
         // cleanup capture/state
@@ -563,7 +615,7 @@
         // if the card is currently revealed, hide it immediately before navigating
         hideRevealInstant();
 
-        if (dx < 0) showNextRandom({ animate: true });
+        if (dx < 0) showNextCard({ animate: true });
         else showPrev({ animate: true });
 
       // short tap -> toggle reveal
@@ -579,8 +631,21 @@
       el.counter.textContent = "Card — / —";
     } else {
       // don't animate the very first load
-      showNextRandom({ animate: false });
+      showNextCard({ animate: false });
     }
+
+    // Mode toggle button
+    el.modeToggle.addEventListener('click', (e) => {
+      e.preventDefault();
+      isRandomMode = !isRandomMode;
+      el.modeLabel.textContent = isRandomMode ? 'Random' : 'In Order';
+      
+      // Reset position tracking when switching modes
+      if (!isRandomMode) {
+        // Starting in-order mode: set to current card's index
+        inOrderIndex = currentIndex;
+      }
+    });
 
     // --- Tap FX: tiny white explosion where the user taps/clicks ---
     function showTapEffect(x, y) {
